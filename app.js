@@ -1,13 +1,31 @@
 var KEY = "perifericos_v1";
 var db = { reqs: [], limit: 2, months: 12 };
 var tab = 1;
+var conn = { url: "", key: "" };
 var $ = function (id) { return document.getElementById(id); };
 
 function load() {
   try { var r = localStorage.getItem(KEY); if (r) db = JSON.parse(r); } catch (e) {}
+  try { var c = localStorage.getItem("perifericos_conn"); if (c) conn = JSON.parse(c); } catch (e) {}
+  $("cu").value = conn.url; $("ck").value = conn.key;
   $("limit").value = db.limit; $("months").value = db.months;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
+function setStatus(t, bad) { var s = $("status"); s.textContent = t; s.style.color = bad ? "var(--bad)" : "var(--muted)"; }
+function connected() { return !!(conn.url && conn.key); }
+function api(body) {
+  var u = body ? conn.url : conn.url + "?key=" + encodeURIComponent(conn.key);
+  var o = body ? { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(Object.assign({ key: conn.key }, body)) } : {};
+  return fetch(u, o).then(function (r) { return r.json(); }).then(function (d) { if (d.error) throw new Error("clave incorrecta"); return d; });
+}
+function sync() {
+  if (!connected()) { setStatus("Modo local: los datos solo se guardan en este navegador."); return Promise.resolve(); }
+  setStatus("Sincronizando con Google Sheets…");
+  return api().then(function (d) {
+    db.reqs = d.reqs; save(); render(); liveCheck();
+    setStatus("✅ Conectado a Google Sheets · " + db.reqs.length + " registros");
+  }).catch(function (e) { setStatus("⚠️ No se pudo conectar: " + e.message, true); });
+}
 function norm(s) { return s.trim().toLowerCase(); }
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function cutoff() { var d = new Date(); d.setMonth(d.getMonth() - db.months); return d.getTime(); }
@@ -66,8 +84,13 @@ $("save").onclick = function () {
   if (s.tot >= db.limit) {
     if (!confirm(name + " ya tiene " + s.tot + " solicitud(es) en los últimos " + db.months + " meses (" + detail(s.by) + ").\n¿Registrar la entrega de todos modos?")) return;
   }
-  db.reqs.push({ id: Date.now() + "" + Math.floor(Math.random() * 1000), ts: Date.now(), user: name, area: $("area").value.trim(), item: $("item").value, reason: $("reason").value, note: $("note").value.trim() });
-  save(); $("note").value = ""; liveCheck(); render();
+  var req = { id: Date.now() + "" + Math.floor(Math.random() * 1000), ts: Date.now(), user: name, area: $("area").value.trim(), item: $("item").value, reason: $("reason").value, note: $("note").value.trim() };
+  var done = function () { db.reqs.push(req); save(); $("note").value = ""; liveCheck(); render(); };
+  if (!connected()) { done(); return; }
+  setStatus("Guardando…"); $("save").disabled = true;
+  api({ action: "add", req: req }).then(function () { done(); setStatus("✅ Guardado en Google Sheets"); })
+    .catch(function (e) { alert("No se pudo guardar en Google Sheets: " + e.message); setStatus("⚠️ Error al guardar", true); })
+    .then(function () { $("save").disabled = false; });
 };
 $("user").oninput = function () {
   var k = norm(this.value), f = db.reqs.filter(function (r) { return norm(r.user) === k; }).pop();
@@ -83,7 +106,11 @@ $("t1").onclick = function () { tab = 1; render(); };
 $("t2").onclick = function () { tab = 2; render(); };
 $("view").onclick = function (e) {
   var id = e.target.getAttribute && e.target.getAttribute("data-id");
-  if (id && confirm("¿Eliminar este registro?")) { db.reqs = db.reqs.filter(function (r) { return r.id !== id; }); save(); liveCheck(); render(); }
+  if (id && confirm("¿Eliminar este registro?")) {
+    var rm = function () { db.reqs = db.reqs.filter(function (r) { return r.id !== id; }); save(); liveCheck(); render(); };
+    if (!connected()) { rm(); return; }
+    api({ action: "delete", id: id }).then(rm).catch(function (e) { alert("No se pudo eliminar: " + e.message); });
+  }
 };
 function dl(name, text, type) {
   var a = document.createElement("a");
@@ -98,7 +125,12 @@ $("csv").onclick = function () {
   dl("solicitudes.csv", "\ufeff" + h + b, "text/csv");
 };
 $("bk").onclick = function () { dl("respaldo-solicitudes.json", JSON.stringify(db), "application/json"); };
-$("rs").onclick = function () { $("file").click(); };
+$("rs").onclick = function () { if (connected()) { alert("Con Google Sheets conectado los datos ya quedan respaldados en la planilla."); return; } $("file").click(); };
+$("cs").onclick = function () {
+  conn = { url: $("cu").value.trim(), key: $("ck").value.trim() };
+  try { localStorage.setItem("perifericos_conn", JSON.stringify(conn)); } catch (e) {}
+  sync();
+};
 $("file").onchange = function () {
   var f = this.files[0]; if (!f) return;
   var r = new FileReader();
@@ -107,4 +139,4 @@ $("file").onchange = function () {
   };
   r.readAsText(f);
 };
-load(); render();
+load(); render(); sync();

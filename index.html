@@ -33,6 +33,15 @@
         <button class="primary" id="save">Registrar entrega</button>
       </div>
       <div class="card" style="margin-top:14px">
+        <h2>Conexión con Google Sheets</h2>
+        <label for="cu">URL de la aplicación web (Apps Script)</label>
+        <input id="cu" placeholder="https://script.google.com/macros/s/.../exec">
+        <label for="ck">Clave de acceso</label>
+        <input id="ck" type="password" autocomplete="off">
+        <button class="primary" id="cs" style="margin-top:10px">Guardar y sincronizar</button>
+        <p class="small" id="status"></p>
+      </div>
+      <div class="card" style="margin-top:14px">
         <h2>Reglas de alerta</h2>
         <div class="cfg">
           <div><label for="limit">Máx. solicitudes</label><input id="limit" type="number" min="1" value="2"></div>
